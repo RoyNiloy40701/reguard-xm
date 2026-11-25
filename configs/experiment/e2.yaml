@@ -1,0 +1,65 @@
+# E2 — pseudo-transfer episodes and the Transfer Reliability Estimator (N1, H1). Development data only.
+# Every choice below is fixed BEFORE looking at E2 results (logged in docs/research_log.md).
+seed: 0
+panel: tierb_etf
+horizon: 5                  # 5-day excess return: ~12 non-overlapping outcomes per quarterly episode (20-day gives ~3)
+target: y_xs_5d
+features: [ret_1d, ret_5d, ret_20d, ret_60d, vol_20d, vol_60d, dvol_60d, skew_60d, mom_12_1, rev_5d,
+           dd_60d, logdv_20d, dv_trend, amihud_20d, beta_60d, corr_60d,
+           m_rf_ann, m_term, m_vix, m_vix_chg20, m_fx_chg20]
+
+# ---- episodes: hold out market j, train on all other markets before the year (annual refit, embargo),
+#      evaluate on j in each quarterly window tau. In-domain comparator = same model on j's own history.
+episodes:
+  calibration_days: 252      # split-conformal block at the end of each training set
+  min_indomain_rows: 500     # comparator needs this many fit rows (else no episode)
+  min_window_rows: 40        # rows in a window with a purged target
+  pre_window_days: 63        # label-free features use the target's covariates in the 63 market days before tau
+  source_ref_rows: 2000      # subsample size of each source reference set
+  # Shift signals compare the target's pre-window with OTHER markets over the SAME dates (contemporaneous
+  # reference), on market-specific features only: date-wide macro features are identical across markets
+  # and would turn the signals into a measure of calendar time (bug found in the first quick run:
+  # domain-classifier AUC = 1.0 in every episode). Mahalanobis distance alone is measured against the
+  # training distribution (classic out-of-distribution score); transfer risk follows Cao et al. (training vs target).
+  shift_features: [ret_1d, ret_5d, ret_20d, ret_60d, vol_20d, vol_60d, dvol_60d, skew_60d, mom_12_1, rev_5d,
+                   dd_60d, logdv_20d, dv_trend, amihud_20d, beta_60d, corr_60d, m_fx_chg20]
+  alpha: 0.10                # nominal miscoverage of the intervals (90%)
+  model:
+    members: 5               # bootstrap ensemble (moving-block bootstrap of training dates, block 63)
+    block: 63
+    gbm: {n_estimators: 1000, lr: 0.03, leaves: 15, min_leaf: 200}
+
+# ---- degradation labels G_e = loss(zero-shot) - loss(in-domain); failure Y_e = 1[G_e > upper tercile of training G]
+labels:
+  primary: g_cal             # interval calibration error  |cov_zs - 0.9| - |cov_in - 0.9|
+  secondary: [g_ic, g_cvar]  # rank-IC shortfall IC_in - IC_zs; CVaR90 of a long/cash reference allocator (zs - in)
+  failure_quantile: 0.6667   # upper tercile, computed on TRAINING episodes of each fold only
+
+# ---- TRE evaluation: time-ordered AND market-held-out (no contemporaneous information from other markets)
+tre:
+  market_folds: 7            # markets split into 7 fixed folds (seeded)
+  min_train_episodes: 300    # first test year = first year with this many earlier episodes
+  calib_folds: 5             # isotonic calibration on out-of-fold scores (GroupKFold by market)
+  lr_C: 0.5
+  gbm: {max_iter: 150, lr: 0.05, max_leaf_nodes: 7, min_samples_leaf: 40}
+  # signal orientation: +1 = larger value means more shift / likelier failure; -1 = larger means more similar
+  signals:
+    mmd: 1
+    mahalanobis: 1
+    dc_auc: 1                # NOTE: saturates near 1 (one market's slow features always separate from a pool)
+    xs_atypicality: 1        # target's squared z-score vs the same-date cross-section of source markets
+    ks_mean: 1
+    ks_max: 1
+    abs_log_vol_ratio: 1
+    liq_gap: -1
+    ens_disagree: 1
+    disagree_ratio: 1
+    pred_entropy: 1
+    atc_gap: 1
+    doc: 1
+    transfer_risk: 1         # Cao et al. (2023) style, pre-deployment data only
+    cka_sim: -1              # label-free CKA-style similarity (feature covariance alignment)
+    corr_src: -1             # correlation of target with the source-pool average return (past 252 days)
+    em_flag: 1
+  bootstrap: {n_boot: 1000, block: quarter}
+  h1_margin: 0.05            # H1: TRE AUROC - best single-signal AUROC >= 0.05 and 95% CI excludes 0

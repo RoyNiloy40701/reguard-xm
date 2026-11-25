@@ -128,12 +128,16 @@ class GBM:
                                              min_samples_leaf=p["min_leaf"], l2_regularization=1.0,
                                              early_stopping=False, random_state=p["seed"])
 
-    def fit(self, X, y, meta=None):
+    def fit(self, X, y, meta=None, sample_weight=None, n_trees: int | None = None):
         """Number of trees chosen by early stopping on a purged time-ordered validation block
         (max n_estimators), then the model is refit on all rows with that number of trees."""
         y = np.asarray(y, float)
         self.cols_ = [c for c in X.columns if X[c].notna().sum() >= 20]   # drop (almost) all-missing features
         Xn = X[self.cols_].to_numpy(dtype=np.float32)
+        if n_trees is not None:                          # fixed size (used by ensemble members)
+            self.best_iter_ = int(n_trees)
+            self.m_ = self._new(self.best_iter_).fit(Xn, y, sample_weight=sample_weight)
+            return self
         tr, va = time_split(meta, len(y))
         nmax = self.p["n"]
         if self.backend == "lightgbm":
@@ -217,6 +221,44 @@ class MLPEnsemble:
     def predict_members(self, X, meta=None):
         Z = self.sc_.transform(X)
         return np.column_stack([m.predict(Z) * self.ysd_ + self.ymu_ for m in self.m_])
+
+    def predict(self, X, meta=None):
+        return self.predict_members(X).mean(axis=1)
+
+
+class GBMEnsemble:
+    """Bootstrap ensemble of GBMs (deep-ensemble analogue for trees).
+
+    The number of trees is chosen once by purged time-ordered early stopping; each member is then
+    fit on a moving-block bootstrap of training DATES (block length `block`, implemented as sample
+    weights), so members differ the way models trained on other histories would.
+    """
+
+    name = "gbm_ens"
+
+    def __init__(self, members: int = 5, seed: int = 0, block: int = 63, gbm: dict | None = None):
+        self.members, self.seed, self.block, self.gbm = members, seed, block, dict(gbm or {})
+
+    def fit(self, X, y, meta):
+        base = GBM(seed=self.seed, **self.gbm).fit(X, y, meta)
+        self.backend, self.best_iter_ = base.backend, base.best_iter_
+        dates = meta["date"].to_numpy()
+        ud, inv = np.unique(dates, return_inverse=True)
+        rng = np.random.default_rng(self.seed)
+        nb = int(np.ceil(len(ud) / self.block))
+        self.m_ = []
+        for k in range(self.members):
+            starts = rng.integers(0, max(1, len(ud) - self.block + 1), size=nb)
+            cnt = np.bincount((starts[:, None] + np.arange(self.block)).ravel().clip(max=len(ud) - 1), minlength=len(ud))
+            w = cnt[inv].astype(float)
+            keep = w > 0
+            m = GBM(seed=self.seed + k + 1, **self.gbm)
+            m.fit(X[keep], np.asarray(y)[keep], None, sample_weight=w[keep], n_trees=self.best_iter_)
+            self.m_.append(m)
+        return self
+
+    def predict_members(self, X, meta=None):
+        return np.column_stack([m.predict(X) for m in self.m_])
 
     def predict(self, X, meta=None):
         return self.predict_members(X).mean(axis=1)
