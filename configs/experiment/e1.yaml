@@ -31,5 +31,5 @@ cs:
   models: [ridge, gbm]
   min_assets: 10
 
-gbm: {n_estimators: 300, lr: 0.03, leaves: 15, min_leaf: 200}
+gbm: {n_estimators: 1000, lr: 0.03, leaves: 15, min_leaf: 200}   # trees chosen by purged time-ordered early stopping
 mlp_ens: {members: 5, hidden: [32, 16], max_rows: 60000}

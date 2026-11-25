@@ -9,10 +9,23 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import RidgeCV
 from sklearn.neural_network import MLPRegressor
 
 from reguard.models.preprocess import TrainScaler
+
+
+def time_split(meta, n: int, val_frac: float = 0.15, gap: int = 20):
+    """Purged, time-ordered split of training rows: (train_idx, val_idx) as integer positions.
+
+    Validation = rows on the last `val_frac` of unique training dates; rows on the `gap` dates
+    before it are dropped. Random or leave-one-out validation is NOT valid with overlapping
+    h-day targets (it is almost in-sample and selects too little regularisation).
+    """
+    dates = meta["date"].to_numpy() if meta is not None and "date" in meta else np.arange(n)
+    ud = np.unique(dates)
+    v0 = ud[int(len(ud) * (1 - val_frac))]
+    cut = ud[max(0, np.searchsorted(ud, v0) - gap)]
+    return np.where(dates < cut)[0], np.where(dates >= v0)[0]
 
 
 class HistMean:
@@ -66,12 +79,24 @@ class AR1:
 
 
 class Ridge:
+    """Ridge with the penalty chosen on a purged time-ordered validation block, then refit on all rows."""
+
     name = "ridge"
     backend = "sklearn"
 
+    def __init__(self, alphas=None):
+        self.alphas = np.logspace(-1, 6, 15) if alphas is None else alphas
+
     def fit(self, X, y, meta=None):
+        from sklearn.linear_model import Ridge as _R
+        y = np.asarray(y, float)
+        tr, va = time_split(meta, len(y))
+        sc = TrainScaler().fit(X.iloc[tr])
+        Ztr, Zva = sc.transform(X.iloc[tr]), sc.transform(X.iloc[va])
+        errs = [np.mean((_R(alpha=a).fit(Ztr, y[tr]).predict(Zva) - y[va]) ** 2) for a in self.alphas]
+        self.alpha_ = float(self.alphas[int(np.argmin(errs))])
         self.sc_ = TrainScaler().fit(X)
-        self.m_ = RidgeCV(alphas=np.logspace(-1, 4, 11)).fit(self.sc_.transform(X), y)
+        self.m_ = _R(alpha=self.alpha_).fit(self.sc_.transform(X), y)
         return self
 
     def predict(self, X, meta=None):
@@ -90,22 +115,46 @@ class GBM:
         except ImportError:
             self.backend = "sklearn-histgb"
 
-    def fit(self, X, y, meta=None):
+    def _new(self, n_trees):
         p = self.p
-        self.cols_ = [c for c in X.columns if X[c].notna().sum() >= 20]   # drop (almost) all-missing features
-        Xn = X[self.cols_].to_numpy(dtype=np.float32)
         if self.backend == "lightgbm":
             import lightgbm as lgb
-            self.m_ = lgb.LGBMRegressor(n_estimators=p["n"], learning_rate=p["lr"], num_leaves=p["leaves"],
-                                        min_child_samples=p["min_leaf"], subsample=0.8, subsample_freq=1,
-                                        colsample_bytree=0.8, reg_lambda=1.0, random_state=p["seed"],
-                                        n_jobs=p["n_jobs"], verbose=-1, deterministic=True, force_row_wise=True)
+            return lgb.LGBMRegressor(n_estimators=n_trees, learning_rate=p["lr"], num_leaves=p["leaves"],
+                                     min_child_samples=p["min_leaf"], subsample=0.8, subsample_freq=1,
+                                     colsample_bytree=0.8, reg_lambda=1.0, random_state=p["seed"],
+                                     n_jobs=p["n_jobs"], verbose=-1, deterministic=True, force_row_wise=True)
+        from sklearn.ensemble import HistGradientBoostingRegressor
+        return HistGradientBoostingRegressor(max_iter=n_trees, learning_rate=p["lr"], max_leaf_nodes=p["leaves"],
+                                             min_samples_leaf=p["min_leaf"], l2_regularization=1.0,
+                                             early_stopping=False, random_state=p["seed"])
+
+    def fit(self, X, y, meta=None):
+        """Number of trees chosen by early stopping on a purged time-ordered validation block
+        (max n_estimators), then the model is refit on all rows with that number of trees."""
+        y = np.asarray(y, float)
+        self.cols_ = [c for c in X.columns if X[c].notna().sum() >= 20]   # drop (almost) all-missing features
+        Xn = X[self.cols_].to_numpy(dtype=np.float32)
+        tr, va = time_split(meta, len(y))
+        nmax = self.p["n"]
+        if self.backend == "lightgbm":
+            import lightgbm as lgb
+            m = self._new(nmax).fit(Xn[tr], y[tr], eval_set=[(Xn[va], y[va])],
+                                    callbacks=[lgb.early_stopping(50, verbose=False)])
+            best = int(m.best_iteration_ or nmax)
         else:
-            from sklearn.ensemble import HistGradientBoostingRegressor
-            self.m_ = HistGradientBoostingRegressor(max_iter=p["n"], learning_rate=p["lr"], max_leaf_nodes=p["leaves"],
-                                                    min_samples_leaf=p["min_leaf"], l2_regularization=1.0,
-                                                    early_stopping=False, random_state=p["seed"])
-        self.m_.fit(Xn, y)
+            m = self._new(25)
+            m.set_params(warm_start=True)
+            best, best_err, n = 1, np.inf, 25
+            while n <= nmax:
+                m.set_params(max_iter=n).fit(Xn[tr], y[tr])
+                err = np.mean((m.predict(Xn[va]) - y[va]) ** 2)
+                if err < best_err - 1e-12:
+                    best, best_err = n, err
+                elif n - best >= 100:
+                    break
+                n += 25
+        self.best_iter_ = max(best, 1)
+        self.m_ = self._new(self.best_iter_).fit(Xn, y)
         return self
 
     def predict(self, X, meta=None):
