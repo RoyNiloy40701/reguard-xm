@@ -1,0 +1,35 @@
+# E1 — forecasting baselines and transfer matrix (supporting experiment; development data only).
+seed: 0
+calibration_days: 252        # last ~1 year of each training set = split-conformal calibration block
+min_train_rows_indomain: 500 # in-domain models need this many fit rows; also defines the common evaluation sample
+refit: annual                # models refit at the first walk-forward window of each year (embargo + purging kept)
+
+# ---- Task TS: time-series forecasting of each country's 20-day excess return (Tier B ETF panel)
+ts:
+  panel: tierb_etf
+  target: y_xs_20d
+  horizon: 20
+  features: [ret_1d, ret_5d, ret_20d, ret_60d, vol_20d, vol_60d, dvol_60d, skew_60d, mom_12_1, rev_5d,
+             dd_60d, logdv_20d, dv_trend, amihud_20d, beta_60d, corr_60d,
+             m_rf_ann, m_term, m_vix, m_vix_chg20, m_fx_chg20]
+  models: [hist_mean, ar1, ridge, gbm, mlp_ens]
+  # settings: in-domain (target's own history), lomo (zero-shot: all other markets),
+  # pooled (global incl. target, GENet-style), us_only (hard transfer from SPY), group:<name> (transfer matrix)
+  settings: [indomain, lomo, pooled, us_only]
+  lomo_models: [hist_mean, ridge, gbm]  # mlp_ens x 43 held-out markets x 19 refits is too slow on CPU
+  matrix_models: [ridge, gbm]           # source-group x target-region transfer matrix
+  groups: [North America, Europe, Asia-Pacific, Latin America, EMEA, Middle East, DM, EM]
+  quantiles: [0.05, 0.5, 0.95]
+
+# ---- Task CS: cross-sectional ranking (scale-free), Tier B countries <-> DSE stocks
+cs:
+  first_year: 2015
+  tierb_target: y_xs_20d
+  dse_target: y_rel_20d               # DSE: return relative to DSEX
+  features: [ret_1d, ret_5d, ret_20d, ret_60d, vol_20d, vol_60d, dvol_60d, skew_60d, mom_12_1, rev_5d,
+             dd_60d, logdv_20d, dv_trend, amihud_20d, beta_60d, corr_60d]
+  models: [ridge, gbm]
+  min_assets: 10
+
+gbm: {n_estimators: 300, lr: 0.03, leaves: 15, min_leaf: 200}
+mlp_ens: {members: 5, hidden: [32, 16], max_rows: 60000}
