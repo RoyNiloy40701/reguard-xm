@@ -14,11 +14,12 @@ from scipy import stats
 from reguard.conformal.core import SortedPool, ks_distance
 
 
-def build_scores(rows: pd.DataFrame, panel: pd.DataFrame, sigma_floor: float) -> pd.DataFrame:
-    """Daily standardised loss scores for every episode row (zero-shot and in-domain forecasts)."""
-    vol = panel[["date", "asset", "vol_20d"]]
+def build_scores(rows: pd.DataFrame, panel: pd.DataFrame, sigma_floor: float, vol_col: str = "vol_20d") -> pd.DataFrame:
+    """Daily standardised loss scores for every episode row (zero-shot and in-domain forecasts).
+    vol_col: the target's own past volatility used as sigma_hat (vol_20d main; vol_60d in sensitivity checks)."""
+    vol = panel[["date", "asset", vol_col]]
     r = rows.merge(vol, on=["date", "asset"], how="left")
-    sig = np.maximum(r["vol_20d"].to_numpy(float) / np.sqrt(252), sigma_floor)
+    sig = np.maximum(r[vol_col].to_numpy(float) / np.sqrt(252), sigma_floor)
     r["sigma"] = sig
     r["s_zs"] = -(r["next_ret"] - r["zs_mean"] / 5.0) / sig
     r["s_in"] = -(r["next_ret"] - r["in_mean"] / 5.0) / sig
