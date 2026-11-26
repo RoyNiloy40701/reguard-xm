@@ -1,0 +1,55 @@
+# E4 — governance across proposers on the 43-country-ETF portfolio (H5, H6, H7). Pre-registered design
+# (docs/preregistration.md §4); values below are fixed before any E4 result. Development data only.
+seed: 0
+panel: tierb_etf
+periods:
+  pool: ["2008-01-01", "2017-12-31"]      # reference-portfolio scores that initialise the governance budget
+  ppo_train: ["2003-01-01", "2017-12-31"]
+  eval: ["2018-01-01", "2021-12-31"]      # development evaluation (PPO hyper-parameters chosen here)
+rebalance_every: 5                       # trading days (weekly)
+min_history: 252                         # an ETF enters the universe after 252 return days
+cost_bps: 10                             # one-way, on traded weight; sensitivity 5 / 25 / 50
+cost_sensitivity: [5, 25, 50]
+
+forecasts:                               # expected returns for mean-variance and the budget's m_hat
+  target: y_xs_20d
+  horizon: 20
+  calibration_days: 252
+  features: [ret_1d, ret_5d, ret_20d, ret_60d, vol_20d, vol_60d, dvol_60d, skew_60d, mom_12_1, rev_5d,
+             dd_60d, logdv_20d, dv_trend, amihud_20d, beta_60d, corr_60d,
+             m_rf_ann, m_term, m_vix, m_vix_chg20, m_fx_chg20]
+  gbm: {n_estimators: 1000, lr: 0.03, leaves: 15, min_leaf: 200}
+
+covariance: {window: 252, min_obs: 200}  # Ledoit-Wolf on past daily returns
+
+proposers:
+  momentum: {top_frac: 0.3333}
+  mean_variance: {risk_aversion: 5.0, max_weight: 1.0}   # long-only, fully invested, mu = pooled GBM forecast / 20
+  risk_parity: {}                                        # inverse 60-day volatility
+
+governance:
+  alpha: 0.05
+  b_max: 0.02                            # one-day loss budget; sensitivity 0.015 / 0.03
+  b_max_sensitivity: [0.015, 0.03]
+  max_weight: 0.15
+  max_turnover: 0.50                     # one-way per rebalance; relaxed first if infeasible
+  gamma: 0.005                           # ACI step
+  pseudo_count: 60
+
+ppo:                                     # stable-baselines3 PPO
+  episode_weeks: 52
+  obs_features: [ret_5d, ret_20d, ret_60d, mom_12_1, rev_5d, vol_60d, dd_60d, beta_60d, corr_60d, logdv_20d]
+  grid:                                  # chosen on the eval period with 3 seeds; final model 10 seeds
+    learning_rate: [0.0003, 0.0001]
+    ent_coef: [0.0, 0.01]
+  grid_seeds: 3
+  final_seeds: 10
+  total_timesteps: 150000
+  n_steps: 1024
+  batch_size: 256
+  gamma: 0.99
+  net_arch: [128, 128]
+
+stress_windows:                          # development stress windows (reported within)
+  - ["2018-10-01", "2018-12-24"]
+  - ["2020-02-19", "2020-04-30"]
