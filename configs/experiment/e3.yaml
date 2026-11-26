@@ -1,0 +1,45 @@
+# E3 — cold-start conformal risk budget (N2) and the reliability-to-coverage bound (T1). Development data only.
+# Every choice below is fixed BEFORE any E3 result (logged in docs/research_log.md). Hyperparameters are
+# fixed a priori (not tuned); sensitivity to them is reported separately.
+seed: 0
+alpha: 0.05                 # nominal budget-exceedance rate (blueprint H3)
+
+# ---- score: one-day standardised loss of a long position in the entered market (blueprint 7.6).
+# For a single-asset market the score does not depend on the position size w:
+#   s_{t+1} = (L_{t+1} - m_hat_t) / sigma_hat_t = -(r_{t+1} - mu_hat_t) / sigma_hat_t
+# mu_hat_t   = zero-shot ensemble forecast of the 5-day excess return / 5 (from the E2 episodes)
+# sigma_hat_t = vol_20d / sqrt(252)  (target's own past 20-day volatility, known at t: a covariate, not a label)
+sigma_floor: 0.002          # daily sigma floor (avoids division by ~0)
+
+# ---- entries: the model "goes live" in held-out market j on the first trading day of year Y and runs all year
+#      with no target residual history at entry (zero-shot). The pool for (j, Y) = post-transfer scores of OTHER
+#      markets from episodes that ended before 1 January Y. The target is never in its own pool.
+entry:
+  min_pool_episodes: 200
+  horizons: [20, 60, 120]   # entry BEF windows (trading days after entry); plus the full year
+
+# ---- CSCRB (proposed)
+cscrb:
+  strata: 3                 # Mondrian reliability strata (terciles of the stratifying score in the pool)
+  stratifier_candidates: [rho_lr, rho_gbm, xs_atypicality, ks_mean, mmd]
+  # nested rule: for entry year Y, choose the candidate with the largest Spearman correlation between the score and
+  # the episode's exceedance rate at the unstratified pool quantile, computed ONLY on pool episodes (years < Y)
+  kernel_weights: true      # localised weights exp(-d^2 / h^2) on standardised signals (h = median distance)
+  kernel_signals: [xs_atypicality, ks_mean, mmd, abs_log_vol_ratio, corr_src]
+  pseudo_count: 60          # lambda_t = n0 / (n0 + n_t): weight of the pool vs the target's own scores
+  gamma: 0.005              # ACI step (Gibbs & Candes 2021)
+
+# ---- baselines (all receive the same target score stream after entry)
+baselines:
+  fixed_z: 1.6449           # Gaussian 95% quantile (fixed volatility budget)
+  heuristic_eta: 1.0        # ad hoc q = z * exp(eta * (rho - median pool rho)) using the selected stratifier
+  warmup: 20                # own-history methods use fixed_z until this many target scores exist
+  time_halflife: 60         # time-weighted conformal (Schmitt-style exponential decay)
+  regime_bandwidth: 0.5     # regime-weighted conformal: Gaussian kernel on log(sigma_hat) differences
+  tcp_eta: 0.05             # TCP-style online quantile tracking step
+  dtaci_gammas: [0.001, 0.005, 0.01, 0.05]   # DtACI expert step sizes
+  dtaci_eta: 2.0            # DtACI exponential-weights learning rate (on pinball loss scaled by 1/alpha)
+
+# ---- hypotheses (development check; final verdict only on the locked test in Phase 9)
+h2: {window: 60, reduction: 0.50, share_markets: 0.6667}
+h3: {max_gap: 0.01}
