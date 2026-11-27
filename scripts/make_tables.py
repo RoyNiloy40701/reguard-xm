@@ -40,7 +40,7 @@ def tex_escape(s: str) -> str:
 
 
 def table(cols: str, header: list[str], rows: list[list[str]], caption: str, label: str,
-          groups: dict[int, str] | None = None, note: str = "", size: str = r"\small") -> str:
+          groups: dict[int, str] | None = None, note: str = "", size: str = r"\footnotesize\setlength{\tabcolsep}{4pt}") -> str:
     out = [r"\begin{table}[t]", r"\centering", size, rf"\caption{{{caption}}}", rf"\label{{{label}}}",
            rf"\begin{{tabular}}{{{cols}}}", r"\toprule", " & ".join(header) + r" \\", r"\midrule"]
     for i, r in enumerate(rows):
@@ -95,9 +95,9 @@ def tab_hypotheses(R: Results) -> tuple[str, str]:
             r"defined afterwards); H7 development: HAC $z$ and two-sided $p$ given in Section~\ref{sec:res-e4}. Holm correction over H1, H2a, H2b, H5 "
             r"(intersection--union, largest $p$) and H7; H3, H6 and H8 are threshold rules; H2-orig and H4 are "
             r"reported only. Analysis plan fixed and version-tagged before test access.")
-    tex = table(r"@{}l>{\raggedright\arraybackslash}p{3.9cm}rrlrl@{}", ["", "Hypothesis", "Dev.", "Test", "Test 95\\% CI", "Holm $p$", "Verdict"], rows,
+    tex = table(r"@{}l>{\raggedright\arraybackslash}p{4.3cm}rrlrl@{}", ["", "Hypothesis", "Dev.", "Test", "Test 95\\% CI", "Holm $p$", "Verdict"], rows,
                 "Confirmatory hypotheses: development and locked-test results.", "tab:hypotheses",
-                groups={0: "Frozen-plan family", 8: "Reported only"}, note=note, size=r"\footnotesize\setlength{\tabcolsep}{3.5pt}")
+                groups={0: "Frozen-plan family", 8: "Reported only"}, note=note, size=r"\scriptsize\setlength{\tabcolsep}{2.5pt}")
     return tex, "\n".join(md)
 
 
@@ -206,7 +206,7 @@ def tab_e4(R: Results, test: bool) -> str:
                  f"E4: weekly country-ETF portfolios with and without the governance layer, {per}.",
                  "tab:e4" + ("" if test else "dev"),
                  note="Annualised return and volatility; daily CVaR$_{95}$; costs 10 bps; risk budget "
-                 "$B_{\\max}=2\\%$. DSR = deflated Sharpe ratio.", size=r"\footnotesize")
+                 "$B_{\\max}=2\\%$. DSR = deflated Sharpe ratio.", size=r"\scriptsize\setlength{\tabcolsep}{3pt}")
 
 
 # ---------------------------------------------------------------- E8

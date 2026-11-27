@@ -24,7 +24,7 @@ from reguard.utils.handoff import PROJECT_ROOT, RESULTS_ROOT  # noqa: E402
 from reguard.viz.assets import (DEV, DRIVER_LABEL, GRID, INK, MARKERS, METHOD_LABEL, PALETTE,  # noqa: E402
                                 PROPOSER_LABEL, PROPOSERS, SCORER_LABEL, SETTING_LABEL, TEST, Results, style)
 
-W = 6.3  # Springer Nature text width (inches)
+W = 5.15  # Springer Nature sn-jnl text width (372 pt)
 LEG_DEV = dict(color=DEV, marker="o", mfc="white", mew=1.3, ls="none", label="Development (2003–2021)")
 LEG_TEST = dict(color=TEST, marker="s", ls="none", label="Test (2022–2026)")
 
@@ -85,7 +85,7 @@ def fig_e2(R: Results, out: Path, made: list) -> None:
     keep = [k for k in d.index if k in t.index]
     order = sorted(keep, key=lambda k: d.at[k, "auroc"])
     y = np.arange(len(order))
-    fig, ax = plt.subplots(figsize=(W * 0.62, 3.3))
+    fig, ax = plt.subplots(figsize=(W * 0.78, 3.4))
     dev_test_dots(ax, y, d.loc[order, "auroc"].to_numpy(), t.loc[order, "auroc"].to_numpy(), off=0.0)
     for i, k in enumerate(order):
         lo, hi = sorted((d.at[k, "auroc"], t.at[k, "auroc"]))
