@@ -161,7 +161,8 @@ def fig_e4(R: Results, out: Path, made: list) -> None:
     axes[0].set_ylim(-0.6, len(PROPOSERS) - 0.2)
     for a in axes:
         a.grid(axis="y", visible=False)
-    fig.legend(handles=[plt.Line2D([], [], **LEG_DEV), plt.Line2D([], [], **LEG_TEST)], loc="lower center",
+    dev4 = dict(LEG_DEV, label="Development (2018–2021)")   # E4 development evaluation period
+    fig.legend(handles=[plt.Line2D([], [], **dev4), plt.Line2D([], [], **LEG_TEST)], loc="lower center",
                ncol=2, bbox_to_anchor=(0.5, -0.24))
     save(fig, out, "fig_e4_governance", made)
 
@@ -192,7 +193,7 @@ def fig_e8(R: Results, out: Path, made: list) -> None:
     ax.set_yticks(y, [DRIVER_LABEL.get(k, k) for k in order])
     ax.grid(axis="y", visible=False)
     ax.set_xlabel("Share of grouped permutation importance")
-    ax.set_title("(a) Drivers of calibration failure", loc="left")
+    ax.set_title("(a) Associated characteristics", loc="left")
     ax.legend(handles=[plt.Line2D([], [], **LEG_DEV), plt.Line2D([], [], **LEG_TEST)], loc="lower right",
               fontsize=6.5)
     # (b) transfer-risk map (development): failure rate by market vs volatility level
