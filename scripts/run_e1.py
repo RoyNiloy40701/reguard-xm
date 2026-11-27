@@ -99,7 +99,8 @@ def fit_predict(df, feats, target, model_name, setting, tmask_fit, tmask_cal, em
             continue
         mdl = make_model(model_name, horizon, cfg["seed"], cfg)
         mdl.fit(df.loc[fit_rows, feats], df.loc[fit_rows, target].to_numpy(), df.loc[fit_rows])
-        res = df.loc[cal_rows, target].to_numpy() - mdl.predict(df.loc[cal_rows, feats], df.loc[cal_rows])
+        res = (df.loc[cal_rows, target].to_numpy() - mdl.predict(df.loc[cal_rows, feats], df.loc[cal_rows])
+               if cal_rows.sum() else np.array([]))
         res = res[np.isfinite(res)]
         p = mdl.predict(df.loc[ev, feats], df.loc[ev])
         o = pd.DataFrame({"pred": p}, index=df.index[ev])
@@ -267,6 +268,9 @@ def run_cs(cfg, quick: bool, log) -> pd.DataFrame:
             for src, F in fits.items():
                 mdl = make_model(mname, 20, cfg["seed"], cfg).fit(F[feats], F["y_rank"].to_numpy(), F)
                 for tgt, E in (("tierb", tb[ev_tb]), ("dse", ds[ev_ds])):
+                    if len(E) == 0:  # e.g. DSE data end (Jan 2026) leaves no labelled rows in the last test year
+                        log(f"  CS {mname} {src}->{tgt} year {y}: no labelled evaluation rows, skipped")
+                        continue
                     o = E[["date", "asset", "y_rank"]].copy()
                     o["pred"] = mdl.predict(E[feats], E)
                     o["source"], o["target"], o["model"], o["year"] = src, tgt, mname, y
