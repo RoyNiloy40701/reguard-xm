@@ -378,7 +378,7 @@ def main() -> None:
     plaus = (ind - zs).dropna()
     lines = [
         "# E1 — forecasting baselines and cross-market transfer", "",
-        f"Quick mode: {args.quick}. Development period only (test locked). Runtime {time.time()-T0:.0f}s.", "",
+        f"Quick mode: {args.quick}. " + ("Confirmatory test period (run by run_final_test.py; see its stage report)." if STEP.startswith("test_") else "Development period only (test locked).") + f" Runtime {time.time()-T0:.0f}s.", "",
         "Target: 20-day excess log return of each country ETF. OOS $R^2$ is against the market's own historical mean "
         "(Campbell-Thompson). Intervals: split-conformal on the last 252 training days of the setting's own source pool.", "",
         "## Main settings (Tier B, time-series task)", "",
