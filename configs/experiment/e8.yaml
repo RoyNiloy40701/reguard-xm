@@ -1,0 +1,8 @@
+# E8 / C6 — drivers of transfer quality (H8). Pre-registered design (docs/preregistration.md §4). Development data.
+seed: 0
+outcome: g_cal
+model: {max_iter: 150, lr: 0.05, max_leaf_nodes: 7, min_samples_leaf: 40}   # = TRE-GBM settings (E2)
+n_folds: 5            # GroupKFold by market
+n_perm: 3
+n_boot: 1000          # quarter-block bootstrap resamples
+h8_share: 0.80        # modal top-3 set must appear in >= 80% of resamples
