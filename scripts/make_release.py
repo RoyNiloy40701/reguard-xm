@@ -8,7 +8,7 @@ Contents
   literature/  protocol, search log, screening, comparison matrix, PRISMA (no third-party PDFs)
   paper/       LaTeX sources, references, generated figures and tables
   results/     the paper's result steps: csv / md / txt / pdf / png only (no zips, no data)
-  README.md, MANIFEST.sha256 (SHA-256 of every file), RELEASE_INFO.txt (commit, plan hash, date)
+  README.md, LICENSE-docs.md (CC BY 4.0; code/LICENSE is MIT), MANIFEST.sha256 (SHA-256 of every file), RELEASE_INFO.txt (commit, plan hash, date)
 Not included: data/ (licensed vendor data; see docs/licence_register.md and README for how to rebuild it).
 
 Safety: the build stops if any file would contain the FRED key from code/.env or an API-key URL parameter,
@@ -31,9 +31,17 @@ from reguard.utils.handoff import CODE_ROOT, PROJECT_ROOT, RESULTS_ROOT  # noqa:
 
 RESULT_STEPS = ["data_quality", "e1", "e2", "e3", "e3_sensitivity", "e4", "e4_ppo", "e8",
                 "test_e1", "test_e1_stage", "test_e1_floor", "test_e2_stage", "test_e3_stage", "test_e4",
-                "test_e4_stage", "test_e8_stage", "test_summary_stage"]
+                "test_e4_stage", "test_e8_stage", "test_summary_stage",
+                "test_e4_cash_matched", "etf_inventory"]   # last two: exploratory / descriptive, reported in the paper
 RESULT_EXT = {".csv", ".md", ".txt", ".pdf", ".png"}
+BINARY_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".zip", ".parquet", ".pkl", ".pt", ".zst", ".gz"}
 TEXT_EXT = {".py", ".md", ".csv", ".txt", ".yaml", ".yml", ".tex", ".bib", ".cfg", ".toml", ".ini", ""}
+# Old Phase 10/11 drafts kept in paper/ for reference; superseded by paper/sections and not part of the release.
+PAPER_EXCLUDE = {"appendix_theory.tex", "results_e1.tex", "results_e2.tex", "results_e3.tex", "results_e4.tex",
+                 "results_e8.tex", "sec2_related.tex", "sec2_related_preview.pdf", "sn-mathphys-ay.bst"}
+# Generic secret patterns: KEY/TOKEN/SECRET assignments with a long value, and FRED-style 32-hex keys on such lines.
+SECRET_RE = re.compile(rb"(?i)(api[_-]?key|token|secret|password)[\"']?\s*[=:]\s*[\"']?([A-Za-z0-9_\-]{16,})")
+PLACEHOLDER = re.compile(rb"(?i)put_your|your_|xxxx|example|placeholder")
 RENAME = {"docs/preregistration.md": "docs/frozen_analysis_plan.md"}   # content (and its SHA-256) unchanged
 PLAN = PROJECT_ROOT / "docs" / "preregistration.md"
 
@@ -69,7 +77,9 @@ def collect() -> list[tuple[Path, str]]:
     for sub, keep in (("docs", lambda p: True),
                       ("literature", lambda p: p.suffix != ".pdf" or p.name.startswith("prisma")),
                       ("paper", lambda p: p.suffix not in {".aux", ".log", ".out", ".synctex", ".fls",
-                                                           ".fdb_latexmk", ".gz", ".bbl", ".blg"})):
+                                                           ".fdb_latexmk", ".gz", ".bbl", ".blg"}
+                       and not (p.parent.name == "paper" and p.name in PAPER_EXCLUDE)
+                       and not (p.parent.name == "submission" and p.name in PAPER_EXCLUDE))):
         root = PROJECT_ROOT / sub
         if root.exists():
             for p in sorted(root.rglob("*")):
@@ -86,9 +96,9 @@ def collect() -> list[tuple[Path, str]]:
     ho = RESULTS_ROOT / "hypothesis_outcomes.md"
     if ho.exists():
         files.append((ho, "results/hypothesis_outcomes.md"))
-    readme = PROJECT_ROOT / "README.md"
-    if readme.exists():
-        files.append((readme, "README.md"))
+    for top in ("README.md", "LICENSE-docs.md"):
+        if (PROJECT_ROOT / top).exists():
+            files.append((PROJECT_ROOT / top, top))
     return [(p, RENAME.get(a, a)) for p, a in files]
 
 
@@ -105,18 +115,24 @@ def main() -> None:
     pats = secrets()
     bad = []
     for p, arc in files:
-        if p.suffix.lower() in TEXT_EXT:
+        if p.suffix.lower() not in BINARY_EXT:   # scan every non-binary file (incl. .env.example)
             data = p.read_bytes()
             if any(s in data for s in pats):
                 bad.append(arc)
+                continue
+            for m in SECRET_RE.finditer(data):
+                if not PLACEHOLDER.search(m.group(2)) and not m.group(2).startswith(b"os"):
+                    bad.append(arc + " (" + m.group(1).decode(errors="ignore") + "=...)")
+                    break
     if bad:
         sys.exit("STOPPED: possible API key found in: " + ", ".join(bad) + "\nRemove it and run again.")
     plan_hash = sha256(PLAN) if PLAN.exists() else "missing"
     info = "\n".join([f"package: ReGuard-XM {a.version}", f"built: {datetime.now().isoformat(timespec='seconds')}",
                       f"git_commit: {commit}" + (" (working tree had uncommitted changes)" if dirty else ""),
                       f"frozen_analysis_plan_sha256: {plan_hash}",
-                      "note: docs/frozen_analysis_plan.md is docs/preregistration.md renamed; the plan was fixed "
-                      "and version-tagged before test access but not posted on a public registry.",
+                      "note: docs/frozen_analysis_plan.md is docs/preregistration.md renamed (file name only; content "
+                      "and SHA-256 unchanged); the plan was fixed before test access, its hash is embedded in "
+                      "scripts/run_final_test.py, and it was not posted on a public registry.",
                       f"files: {len(files)}"])
     out_dir = PROJECT_ROOT / "release"
     out_dir.mkdir(exist_ok=True)
@@ -136,7 +152,7 @@ def main() -> None:
         for i, line in enumerate(t.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
             if re.search(r"pre-?regist", line, re.I) and not line.lstrip().startswith("%"):
                 print(f"  WARNING wording: {t.name}:{i} mentions pre-registration — use 'analysis plan fixed "
-                      f"and version-tagged before test access'")
+                      f"before test access'")
 
 
 if __name__ == "__main__":
