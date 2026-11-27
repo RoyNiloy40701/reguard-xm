@@ -135,6 +135,8 @@ def main() -> None:
             res.append({"proposer": "ppo_ensemble", "governed": gov, **PM.summary(base)})
     S = pd.DataFrame(res)
     S.to_csv(d / "summary.csv", index=False)
+    pd.concat([v[["date", "net", "rf", "cash"]].assign(proposer=k[0], governed=k[1]) for k, v in series.items()
+               if not str(k[0]).startswith("ppo_seed")]).to_csv(d / "daily_series.csv", index=False)
 
     # H5 / H6 per proposer (governed vs ungoverned)
     stress = cfg["stress_windows"]
@@ -156,7 +158,9 @@ def main() -> None:
     if ("ppo_ensemble", True) in series:
         x = series[("ppo_ensemble", True)]; y = series[("mean_variance", True)]
         t7 = PM.sharpe_diff_test((x["net"] - x["rf"]).to_numpy(), (y["net"] - y["rf"]).to_numpy())
-        H7 = pd.DataFrame([{"comparison": "governed PPO ensemble - governed mean-variance", **t7, "supported": t7["p"] < 0.05}])
+        H7 = pd.DataFrame([{"comparison": "governed PPO ensemble - governed mean-variance", **t7,
+                            "supported": bool(t7["p"] < 0.05 and t7["sharpe_diff_daily"] > 0),   # RL must be BETTER
+                            "direction": "PPO better" if t7["sharpe_diff_daily"] > 0 else "PPO worse"}])
     else:
         H7 = pd.DataFrame([{"comparison": "PPO not available", "supported": None}])
     H7.to_csv(d / "h7.csv", index=False)
